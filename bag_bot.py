@@ -4,7 +4,7 @@ import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-TELEGRAM_BOT_TOKEN = "8834071260:AAF5nvZNlqp7lAbNLWVyxla8rGWQ0a6Nt_g"
+TELEGRAM_BOT_TOKEN = "8843510657AAGzWuofGxxMcDsr-DKhHLq"
 
 DEFAULT_HOLDINGS = {
     "RPR": 100000,
@@ -73,13 +73,15 @@ def get_live_token_prices_in_xrp() -> dict:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📊 *Capital Revival Dual-Driver Calculator*\n\n"
-        "Calculate bag value accounting for **both** XRP price movement **and** individual token ratio shifts!\n\n"
-        "**Flexible Inputs:**\n"
-        "1. *General Portfolio Check:* Send a target XRP price like `2.50`\n"
-        "2. *Specific Custom Bag:* Send `Amount Token TargetXRP` (e.g., `50000 RPR 3.00`)\n"
-        "3. *Advanced Dual-Driver:* Send `Amount Token TargetRatio TargetXRP`\n"
-        "   _Example:_ `50000 RPR 0.0050 3.00` (Calculates 50,000 RPR if its ratio grows to `0.0050 XRP` *and* XRP hits `$3.00`).",
+        "📊 *Capital Revival Calculator Guide*\n\n"
+        "Calculate potential bag values using live market data from XRPL.to & CoinGecko.\n\n"
+        "💡 *How to use commands:*\n"
+        "• **Just an XRP price:** `2.50`\n"
+        "  _(Calculates default 100k bag per token if XRP hits $2.50)_\n\n"
+        "• **Custom Bag & XRP Target:** `50000 RPR 3.00`\n"
+        "  _(Calculates your custom token amount at a target XRP price)_\n\n"
+        "• **Advanced Dual-Driver:** `50000 RPR 0.0050 3.00`\n"
+        "  _(Calculates if both the token's ratio AND XRP price scale up simultaneously)_",
         parse_mode="Markdown"
     )
 
@@ -98,9 +100,7 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     live_xrp = get_live_xrp_usd()
     live_tokens = get_live_token_prices_in_xrp()
 
-    # Pattern parsing based on number of arguments provided
     if len(parts) >= 4:
-        # e.g. 50000 rpr 0.0050 3.00
         try:
             custom_amount = float(parts[0].replace(",", ""))
             custom_token = parts[1].upper()
@@ -109,7 +109,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             pass
     elif len(parts) == 3:
-        # e.g. 50000 rpr 3.00 (uses live/fallback ratio)
         try:
             custom_amount = float(parts[0].replace(",", ""))
             custom_token = parts[1].upper()
@@ -131,7 +130,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         mode = "Target Projection"
 
-    # Handle custom token calculation
     if custom_amount is not None and custom_token in FALLBACK_RATIOS:
         if custom_ratio is None:
             custom_ratio = live_tokens.get(custom_token) or FALLBACK_RATIOS[custom_token]
@@ -140,20 +138,19 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_bag_usd = custom_amount * token_usd_price
 
         await update.message.reply_text(
-            f"🎯 *Custom Dual-Driver Bag Calculation*\n\n"
-            f"• *Token Bag:* {custom_amount:,.0f} {custom_token}\n"
-            f"• *Token-to-XRP Ratio:* {custom_ratio:.6f} XRP per {custom_token}\n"
-            f"• *Target XRP Price:* ${xrp_input:,.4f}\n"
-            f"• *Projected Token USD Price:* ${token_usd_price:,.4f}\n\n"
-            f"💰 **Total Bag Value: ${total_bag_usd:,.2f}**\n\n"
-            f"_(Data powered by XRPL.to & CoinGecko)_",
+            f"🎯 *Custom Bag Calculation*\n\n"
+            f"• *Holding:* {custom_amount:,.0f} {custom_token}\n"
+            f"• *Token Ratio:* {custom_ratio:.6f} XRP\n"
+            f"• *Target XRP:* ${xrp_input:,.4f}\n\n"
+            f"💰 **Total Value: ${total_bag_usd:,.2f}**\n\n"
+            f"*(Data: XRPL.to & CoinGecko)*",
             parse_mode="Markdown"
         )
         return
 
-    # Default full portfolio matrix output
+    # Clean, concise footer layout
     lines = [f"📈 *XRP Price:* ${xrp_input:,.4f} ({mode})\n"]
-    lines.append("💼 *Portfolio Breakdown (Default 100k held per token):*")
+    lines.append("💼 *Portfolio Breakdown (100k per token):*")
     
     total_portfolio_usd = 0
     for token in TOKEN_ORDER:
@@ -164,11 +161,12 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         lines.append(f"• *{token}*: ${holding_usd:,.2f}  _({token_xrp_price:.6f} XRP)_")
 
-    lines.append(f"\n🚀 **Total Portfolio Value: ${total_portfolio_usd:,.2f}**")
+    lines.append(f"\n🚀 **Total Portfolio: ${total_portfolio_usd:,.2f}**")
     lines.append(
-        "\nℹ️ *Custom Formats:*\n"
-        "• Specific bag: `50000 RPR 3.00`\n"
-        "• Custom ratio + XRP target: `50000 RPR 0.0050 3.00`"
+        "\n━━━━━━━━━━━━━━━━━━━━\n"
+        "💡 *Try custom inputs:*\n"
+        "• `50000 RPR 3.00` (Amount Token XRP)\n"
+        "• `50000 RPR 0.005 3.00` (Amount Token Ratio XRP)"
     )
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
@@ -184,7 +182,7 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
-    print("Dual-driver bag calculator bot is running...")
+    print("Bag calculator bot is running cleanly...")
     
     try:
         app.run_polling()
