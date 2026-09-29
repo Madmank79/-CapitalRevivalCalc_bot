@@ -4,7 +4,7 @@ import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-TELEGRAM_BOT_TOKEN = "8843510657AAGzWuofGxxMcDsr-DKhHLq"
+TELEGRAM_BOT_TOKEN = "8834071260:AAF5nvZNlqp7lAbNLWVyxla8rGWQ0a6Nt_g"
 
 DEFAULT_HOLDINGS = {
     "RPR": 100000,
