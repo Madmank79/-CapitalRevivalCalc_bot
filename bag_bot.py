@@ -16,7 +16,7 @@ DEFAULT_HOLDINGS = {
 }
 
 FALLBACK_RATIOS = {
-    "RPR": 0.0031,
+    "RPR": 0.00202,
     "ASC": 0.00037,
     "PLR": 0.00055,
     "BOX": 0.00015,
@@ -40,19 +40,35 @@ def get_live_xrp_usd() -> float | None:
 def get_live_token_prices_in_xrp() -> dict:
     live = {t: None for t in TOKEN_ORDER}
     headers = {"User-Agent": "CapitalRevivalBot/1.0"}
+    
+    # Check XRPL.to tokens endpoint with comprehensive key matching
     try:
-        r = requests.get("https://api.xrpl.to/v1/tokens?limit=150&sort=vol24hxrp", headers=headers, timeout=10)
+        r = requests.get("https://api.xrpl.to/v1/tokens?limit=200", headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.json()
             tokens = data.get("tokens", data) if isinstance(data, dict) else data
-            for item in tokens:
-                symbol = str(item.get("name") or item.get("currency") or item.get("symbol") or "").upper()
-                price = item.get("exch") or item.get("price") or item.get("price_xrp") or item.get("rate")
-                if symbol in live and price is not None:
-                    live[symbol] = float(price)
+            if isinstance(tokens, list):
+                for item in tokens:
+                    # Check multiple possible keys for symbol and price
+                    symbol = str(item.get("name") or item.get("currency") or item.get("symbol") or item.get("code") or "").upper()
+                    price = (
+                        item.get("exch") or 
+                        item.get("price") or 
+                        item.get("price_xrp") or 
+                        item.get("rate") or 
+                        item.get("buy_price")
+                    )
+                    for t in TOKEN_ORDER:
+                        if t == symbol or t in symbol:
+                            if price is not None:
+                                try:
+                                    live[t] = float(price)
+                                except ValueError:
+                                    pass
     except Exception:
         pass
 
+    # Fallback search query for any still missing
     for token in TOKEN_ORDER:
         if live[token] is None:
             try:
@@ -69,6 +85,7 @@ def get_live_token_prices_in_xrp() -> dict:
                                 break
             except Exception:
                 pass
+                
     return live
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -77,7 +94,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Calculate potential bag values using live market data from XRPL.to & CoinGecko.\n\n"
         "💡 *How to use commands:*\n"
         "• **Just XRP price:** `2.50`\n"
-        "• **Custom Ratio & Target:** `50000 rpr @ 0.003 3.00`",
+        "• **Custom Ratio & Target:** `50000 rpr @ 0.002 1.50`",
         parse_mode="Markdown"
     )
 
@@ -92,7 +109,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     live_xrp = get_live_xrp_usd()
     live_tokens = get_live_token_prices_in_xrp()
 
-    # Detect if user intended a custom token calculation by searching for a token symbol in parts
     detected_token = None
     for p in parts:
         if p.upper() in FALLBACK_RATIOS:
@@ -100,7 +116,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
     if detected_token:
-        # Extract all numbers from the text sequence
         numbers = []
         for p in parts:
             if p.upper() == detected_token:
@@ -111,17 +126,17 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except ValueError:
                 pass
 
-        # We expect 2 numbers: [Amount, Target XRP] OR [Amount, Ratio, Target XRP]
         if len(numbers) >= 2:
             custom_amount = numbers[0]
             if len(numbers) == 3:
                 custom_ratio = numbers[1]
                 xrp_input = numbers[2]
             else:
+                # If ratio wasn't explicitly typed, grab live market rate or fallback
                 custom_ratio = live_tokens.get(detected_token) or FALLBACK_RATIOS[detected_token]
                 xrp_input = numbers[1]
 
-            if live_xrp and xrp_input <= 0:
+            if live_xrp and (xrp_input <= 0):
                 xrp_input = live_xrp
 
             token_usd_price = custom_ratio * xrp_input
@@ -138,7 +153,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-    # Fallback: If no token was found, check if it's just an XRP price target for the full matrix
     xrp_input = None
     if len(parts) == 1:
         try:
@@ -148,7 +162,7 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if xrp_input is None or xrp_input <= 0:
         if live_xrp is None:
-            await update.message.reply_text("Could not fetch live XRP price. Please enter a valid number (e.g., `2.00`).", parse_mode="Markdown")
+            await update.message.reply_text("Could not fetch live XRP price. Please enter a valid number (e.g., `1.50`).", parse_mode="Markdown")
             return
         xrp_input = live_xrp
         mode = "Current Live Price"
@@ -171,7 +185,7 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.append(
         "\n━━━━━━━━━━━━━━━━━━━━\n"
         "💡 *Try custom format:*\n"
-        "• `100 rpr @ 0.0003 3.00`"
+        "• `50000 rpr @ 0.002 1.50`"
     )
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
@@ -187,7 +201,7 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
-    print("Bag calculator bot is running with intelligent parser...")
+    print("Bag calculator bot is running with enhanced API field matching...")
     
     try:
         app.run_polling()
