@@ -41,25 +41,18 @@ def get_live_token_prices_in_xrp() -> dict:
     live = {t: None for t in TOKEN_ORDER}
     headers = {"User-Agent": "CapitalRevivalBot/1.0"}
     
-    # Check XRPL.to tokens endpoint with comprehensive key matching
+    # ── SOURCE 1: XRPL.to Bulk List ──
     try:
-        r = requests.get("https://api.xrpl.to/v1/tokens?limit=200", headers=headers, timeout=10)
+        r = requests.get("https://api.xrpl.to/v1/tokens?limit=200", headers=headers, timeout=6)
         if r.status_code == 200:
             data = r.json()
             tokens = data.get("tokens", data) if isinstance(data, dict) else data
             if isinstance(tokens, list):
                 for item in tokens:
-                    # Check multiple possible keys for symbol and price
                     symbol = str(item.get("name") or item.get("currency") or item.get("symbol") or item.get("code") or "").upper()
-                    price = (
-                        item.get("exch") or 
-                        item.get("price") or 
-                        item.get("price_xrp") or 
-                        item.get("rate") or 
-                        item.get("buy_price")
-                    )
+                    price = item.get("exch") or item.get("price") or item.get("price_xrp") or item.get("rate")
                     for t in TOKEN_ORDER:
-                        if t == symbol or t in symbol:
+                        if (t == symbol or t in symbol) and live[t] is None:
                             if price is not None:
                                 try:
                                     live[t] = float(price)
@@ -68,11 +61,31 @@ def get_live_token_prices_in_xrp() -> dict:
     except Exception:
         pass
 
-    # Fallback search query for any still missing
+    # ── SOURCE 2: Dexscreener API (XRPL Chain Pairs) ──
     for token in TOKEN_ORDER:
         if live[token] is None:
             try:
-                sr = requests.get("https://api.xrpl.to/v1/search", params={"q": token}, headers=headers, timeout=5)
+                sr = requests.get(f"https://api.dexscreener.com/latest/dex/search?q={token}", headers=headers, timeout=5)
+                if sr.status_code == 200:
+                    sdata = sr.json()
+                    pairs = sdata.get("pairs", [])
+                    if isinstance(pairs, list):
+                        for p in pairs:
+                            if p.get("chainId") == "xrpl":
+                                base_token = p.get("baseToken", {})
+                                if base_token.get("symbol", "").upper() == token:
+                                    price_native = p.get("priceNative") # Native asset on XRPL DEX is XRP
+                                    if price_native is not None:
+                                        live[token] = float(price_native)
+                                        break
+            except Exception:
+                pass
+
+    # ── SOURCE 3: XRPL.to Individual Search Fallback ──
+    for token in TOKEN_ORDER:
+        if live[token] is None:
+            try:
+                sr = requests.get("https://api.xrpl.to/v1/search", params={"q": token}, headers=headers, timeout=4)
                 if sr.status_code == 200:
                     sdata = sr.json()
                     matches = sdata.get("tokens", sdata.get("data", sdata)) if isinstance(sdata, dict) else sdata
@@ -85,16 +98,17 @@ def get_live_token_prices_in_xrp() -> dict:
                                 break
             except Exception:
                 pass
-                
+
     return live
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📊 *Capital Revival Calculator Guide*\n\n"
-        "Calculate potential bag values using live market data from XRPL.to & CoinGecko.\n\n"
+        "Calculate potential bag values using multi-source data (XRPL.to & Dexscreener).\n\n"
         "💡 *How to use commands:*\n"
-        "• **Just XRP price:** `2.50`\n"
-        "• **Custom Ratio & Target:** `50000 rpr @ 0.002 1.50`",
+        "• **Just XRP price:** `1.50`\n"
+        "• **Custom Bag & Target:** `50000 rpr 1.50`\n"
+        "• **Advanced Dual-Driver:** `50000 rpr @ 0.002 1.50`",
         parse_mode="Markdown"
     )
 
@@ -132,7 +146,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 custom_ratio = numbers[1]
                 xrp_input = numbers[2]
             else:
-                # If ratio wasn't explicitly typed, grab live market rate or fallback
                 custom_ratio = live_tokens.get(detected_token) or FALLBACK_RATIOS[detected_token]
                 xrp_input = numbers[1]
 
@@ -148,7 +161,7 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"• *Token Ratio:* {custom_ratio:.6f} XRP\n"
                 f"• *Target XRP:* ${xrp_input:,.4f}\n\n"
                 f"💰 **Total Value: ${total_bag_usd:,.2f}**\n\n"
-                f"*(Data: XRPL.to & CoinGecko)*",
+                f"*(Data: XRPL.to & Dexscreener)*",
                 parse_mode="Markdown"
             )
             return
@@ -184,8 +197,9 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.append(f"\n🚀 **Total Portfolio: ${total_portfolio_usd:,.2f}**")
     lines.append(
         "\n━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 *Try custom format:*\n"
-        "• `50000 rpr @ 0.002 1.50`"
+        "💡 *Try custom formats:*\n"
+        "• `50000 rpr 1.50` (Uses live multi-source ratio)\n"
+        "• `50000 rpr @ 0.002 1.50` (Custom ratio)"
     )
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
@@ -201,7 +215,7 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
-    print("Bag calculator bot is running with enhanced API field matching...")
+    print("Bag calculator bot running with multi-source redundancy (XRPL.to + Dexscreener)...")
     
     try:
         app.run_polling()
