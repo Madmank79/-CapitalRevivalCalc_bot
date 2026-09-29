@@ -6,7 +6,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-
 DEFAULT_HOLDINGS = {
     "RPR": 100000,
     "ASC": 100000,
@@ -77,46 +76,71 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📊 *Capital Revival Calculator Guide*\n\n"
         "Calculate potential bag values using live market data from XRPL.to & CoinGecko.\n\n"
         "💡 *How to use commands:*\n"
-        "• **Just an XRP price:** `2.50`\n"
-        "  _(Calculates default 100k bag per token if XRP hits $2.50)_\n\n"
-        "• **Custom Bag & XRP Target:** `50000 RPR 3.00`\n"
-        "  _(Calculates your custom token amount at a target XRP price)_\n\n"
-        "• **Advanced Dual-Driver:** `50000 RPR 0.0050 3.00`\n"
-        "  _(Calculates if both the token's ratio AND XRP price scale up simultaneously)_",
+        "• **Just XRP price:** `2.50`\n"
+        "• **Custom Ratio & Target:** `50000 rpr @ 0.003 3.00`",
         parse_mode="Markdown"
     )
 
 async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip().lower()
-    parts = text.split()
+    raw_text = update.message.text.strip().lower()
+    clean_text = raw_text.replace("@", "")
+    parts = clean_text.split()
 
     if parts and parts[0] in ["/calc", "/bag", "/live", "/price"]:
         parts = parts[1:]
 
-    custom_amount = None
-    custom_token = None
-    custom_ratio = None
-    xrp_input = None
-
     live_xrp = get_live_xrp_usd()
     live_tokens = get_live_token_prices_in_xrp()
 
-    if len(parts) >= 4:
-        try:
-            custom_amount = float(parts[0].replace(",", ""))
-            custom_token = parts[1].upper()
-            custom_ratio = float(parts[2])
-            xrp_input = float(parts[3].replace("$", "").replace(",", ""))
-        except ValueError:
-            pass
-    elif len(parts) == 3:
-        try:
-            custom_amount = float(parts[0].replace(",", ""))
-            custom_token = parts[1].upper()
-            xrp_input = float(parts[2].replace("$", "").replace(",", ""))
-        except ValueError:
-            pass
-    elif len(parts) == 1:
+    # Detect if user intended a custom token calculation by searching for a token symbol in parts
+    detected_token = None
+    for p in parts:
+        if p.upper() in FALLBACK_RATIOS:
+            detected_token = p.upper()
+            break
+
+    if detected_token:
+        # Extract all numbers from the text sequence
+        numbers = []
+        for p in parts:
+            if p.upper() == detected_token:
+                continue
+            try:
+                num = float(p.replace("$", "").replace(",", ""))
+                numbers.append(num)
+            except ValueError:
+                pass
+
+        # We expect 2 numbers: [Amount, Target XRP] OR [Amount, Ratio, Target XRP]
+        if len(numbers) >= 2:
+            custom_amount = numbers[0]
+            if len(numbers) == 3:
+                custom_ratio = numbers[1]
+                xrp_input = numbers[2]
+            else:
+                custom_ratio = live_tokens.get(detected_token) or FALLBACK_RATIOS[detected_token]
+                xrp_input = numbers[1]
+
+            if live_xrp and xrp_input <= 0:
+                xrp_input = live_xrp
+
+            token_usd_price = custom_ratio * xrp_input
+            total_bag_usd = custom_amount * token_usd_price
+
+            await update.message.reply_text(
+                f"🎯 *Custom Bag Calculation*\n\n"
+                f"• *Holding:* {custom_amount:,.2f} {detected_token}\n"
+                f"• *Token Ratio:* {custom_ratio:.6f} XRP\n"
+                f"• *Target XRP:* ${xrp_input:,.4f}\n\n"
+                f"💰 **Total Value: ${total_bag_usd:,.2f}**\n\n"
+                f"*(Data: XRPL.to & CoinGecko)*",
+                parse_mode="Markdown"
+            )
+            return
+
+    # Fallback: If no token was found, check if it's just an XRP price target for the full matrix
+    xrp_input = None
+    if len(parts) == 1:
         try:
             xrp_input = float(parts[0].replace("$", "").replace(",", ""))
         except ValueError:
@@ -131,25 +155,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         mode = "Target Projection"
 
-    if custom_amount is not None and custom_token in FALLBACK_RATIOS:
-        if custom_ratio is None:
-            custom_ratio = live_tokens.get(custom_token) or FALLBACK_RATIOS[custom_token]
-
-        token_usd_price = custom_ratio * xrp_input
-        total_bag_usd = custom_amount * token_usd_price
-
-        await update.message.reply_text(
-            f"🎯 *Custom Bag Calculation*\n\n"
-            f"• *Holding:* {custom_amount:,.0f} {custom_token}\n"
-            f"• *Token Ratio:* {custom_ratio:.6f} XRP\n"
-            f"• *Target XRP:* ${xrp_input:,.4f}\n\n"
-            f"💰 **Total Value: ${total_bag_usd:,.2f}**\n\n"
-            f"*(Data: XRPL.to & CoinGecko)*",
-            parse_mode="Markdown"
-        )
-        return
-
-    # Clean, concise footer layout
     lines = [f"📈 *XRP Price:* ${xrp_input:,.4f} ({mode})\n"]
     lines.append("💼 *Portfolio Breakdown (100k per token):*")
     
@@ -165,9 +170,8 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.append(f"\n🚀 **Total Portfolio: ${total_portfolio_usd:,.2f}**")
     lines.append(
         "\n━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 *Try custom inputs:*\n"
-        "• `50000 RPR 3.00` (Amount Token XRP)\n"
-        "• `50000 RPR 0.005 3.00` (Amount Token Ratio XRP)"
+        "💡 *Try custom format:*\n"
+        "• `100 rpr @ 0.0003 3.00`"
     )
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
@@ -183,7 +187,7 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
-    print("Bag calculator bot is running cleanly...")
+    print("Bag calculator bot is running with intelligent parser...")
     
     try:
         app.run_polling()
