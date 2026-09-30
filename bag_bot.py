@@ -1,10 +1,30 @@
 import os
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+PORT = int(os.environ.get("PORT", 10000))
+
+# --- DUMMY HTTP SERVER FOR RENDER FREE WEB SERVICE ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is active and running!")
+
+def run_web_server():
+    server_address = ("", PORT)
+    httpd = HTTPServer(server_address, HealthCheckHandler)
+    httpd.serve_forever()
+
+def start_web_server_thread():
+    t = threading.Thread(target=run_web_server, daemon=True)
+    t.start()
+# ----------------------------------------------------
 
 DEFAULT_HOLDINGS = {
     "RPR": 100000,
@@ -148,7 +168,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     live_xrp = get_live_xrp_usd()
     live_tokens = get_live_token_prices_in_xrp()
 
-    # Custom single-token bag
     detected_token = None
     for p in parts:
         if p.upper() in FALLBACK_RATIOS:
@@ -190,7 +209,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-    # Normal portfolio view
     xrp_input = None
     if len(parts) == 1:
         try:
@@ -235,6 +253,9 @@ def main():
     if not token:
         raise RuntimeError("Please set the TELEGRAM_BOT_TOKEN environment variable")
 
+    # Start the dummy web server so Render's free Web Service health check passes
+    start_web_server_thread()
+
     app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -243,7 +264,7 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
-    print("Capital Revival Calculator is running...")
+    print("Capital Revival Calculator is running with health-check web server...")
     app.run_polling()
 
 if __name__ == "__main__":
