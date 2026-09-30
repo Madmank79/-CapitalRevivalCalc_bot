@@ -112,10 +112,10 @@ def get_live_token_prices_in_xrp() -> dict:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📊 *Capital Revival Calculator*\n\n"
-        "Estimates the value of RPR, ASC, PLR, BOX, STX & GRIM based on an XRP price.\n\n"
+        "Estimates token values for RPR, ASC, PLR, BOX, STX & GRIM based on XRP price projections.\n\n"
         "*Quick Start:*\n"
-        "• Type a number → e.g. `1.50`\n"
-        "• Or type `/calc` to use the current live XRP price\n\n"
+        "• Type a target XRP price → e.g. `1.50`\n"
+        "• Or type `/calc` to use the current live market price\n\n"
         "Type /help for all commands\n"
         "Type /info to understand how the calculator works",
         parse_mode="Markdown"
@@ -131,7 +131,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/live – Same as /calc\n"
         "/price – Same as /calc\n\n"
         "*Manual usage:*\n"
-        "• Just type a number → `1.50`\n"
+        "• Target XRP price → `1.50`\n"
         "• Custom bag (USD price) → `50000 rpr $0.40`\n"
         "• Custom bag (XRP ratio) → `50000 rpr 1.50`\n\n"
         "🟢 = Live market price\n"
@@ -142,7 +142,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "ℹ️ *How this calculator works*\n\n"
-        "This bot estimates what RPR, ASC, PLR, BOX, STX and GRIM would be worth at a given XRP price.\n\n"
+        "This bot evaluates what RPR, ASC, PLR, BOX, STX and GRIM are worth at a given XRP price.\n\n"
         "*Two types of prices are used:*\n\n"
         "1. *Live prices* (🟢)\n"
         "   Fetched in real-time from XRPL sources (Dexscreener + XRPL.to) when available.\n\n"
@@ -151,8 +151,7 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Important notes:*\n"
         "• This is a projection tool, not financial advice.\n"
         "• Live prices can change quickly on the XRPL DEX.\n"
-        "• The 100,000 holding size is just an example for the portfolio view.\n"
-        "• You can calculate any custom bag size using the formats above.\n\n"
+        "• You can evaluate any custom bag size using the shorthand formats.\n\n"
         "Data sources: CoinGecko (XRP), Dexscreener & XRPL.to (tokens)",
         parse_mode="Markdown"
     )
@@ -194,8 +193,8 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 total = custom_amount * price_val
 
                 await update.message.reply_text(
-                    f"🎯 *Custom Bag Calculation (USD Price)*\n\n"
-                    f"• Holding: `{custom_amount:,.0f} {detected_token}`\n"
+                    f"🎯 *Custom Calculation*\n\n"
+                    f"• Amount: `{custom_amount:,.0f} {detected_token}`\n"
                     f"• Price per coin: `${price_val:,.4f} USD`\n\n"
                     f"💰 *Total Value: ${total:,.2f}*",
                     parse_mode="Markdown"
@@ -217,8 +216,8 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 source = "Live" if live_tokens.get(detected_token) else "Fallback"
 
                 await update.message.reply_text(
-                    f"🎯 *Custom Bag Calculation (XRP Ratio)*\n\n"
-                    f"• Holding: `{custom_amount:,.0f} {detected_token}`\n"
+                    f"🎯 *Custom Calculation*\n\n"
+                    f"• Amount: `{custom_amount:,.0f} {detected_token}`\n"
                     f"• Ratio: `{custom_ratio:.6f} XRP` ({source})\n"
                     f"• Target XRP: `${xrp_input:,.4f}`\n\n"
                     f"💰 *Total Value: ${total:,.2f}*",
@@ -242,23 +241,19 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         xrp_input = live_xrp
         mode = "Current Live XRP"
     else:
-        mode = "Your Target XRP Price"
+        mode = "Target XRP"
 
     lines = [f"📈 *XRP Price: ${xrp_input:,.4f}* ({mode})\n"]
-    lines.append("💼 *Portfolio (100,000 of each token):*\n")
+    lines.append("🪙 *Token Valuations:*")
 
     total = 0.0
     for token in TOKEN_ORDER:
         ratio = live_tokens.get(token) or FALLBACK_RATIOS[token]
         is_live = live_tokens.get(token) is not None
         unit_usd = ratio * xrp_input
-        value = unit_usd * DEFAULT_HOLDINGS[token]
-        total += value
         tag = "🟢" if is_live else "⚪"
-        # Shows total bag value, unit price in USD, and XRP ratio
-        lines.append(f"{tag} *{token}*: `${value:,.2f}` (`${unit_usd:,.4f}`/coin, `{ratio:.6f}` XRP)")
+        lines.append(f"{tag} *{token}*: `${unit_usd:,.4f}`  (`{ratio:.6f}` XRP)")
 
-    lines.append(f"\n🚀 *Total Portfolio: ${total:,.2f}*")
     lines.append(
         "\n🟢 = Live price   ⚪ = Fallback ratio\n"
         "Try: `50000 rpr $0.40` or `50000 rpr 1.50`\n"
