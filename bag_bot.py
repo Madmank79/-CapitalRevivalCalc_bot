@@ -132,8 +132,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/price – Same as /calc\n\n"
         "*Manual usage:*\n"
         "• Just type a number → `1.50`\n"
-        "• Custom bag → `50000 rpr 1.50`\n"
-        "• Custom ratio → `50000 rpr @ 0.0025 1.50`\n\n"
+        "• Custom bag (USD price) → `50000 rpr $0.40`\n"
+        "• Custom bag (XRP ratio) → `50000 rpr 1.50`\n"
+        "• Custom ratio override → `50000 rpr @ 0.0025 1.50`\n\n"
         "🟢 = Live market price\n"
         "⚪ = Fallback ratio (used when live data is unavailable)",
         parse_mode="Markdown"
@@ -175,39 +176,58 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
     if detected_token:
+        has_dollar = "$" in raw_text
         numbers = []
         for p in parts:
             if p.upper() == detected_token:
                 continue
             try:
-                numbers.append(float(p.replace("$", "").replace(",", "")))
+                cleaned_p = p.replace("$", "").replace(",", "")
+                numbers.append((float(cleaned_p), "$" in p))
             except ValueError:
                 pass
 
-        if len(numbers) >= 2:
-            custom_amount = numbers[0]
-            if len(numbers) >= 3:
-                custom_ratio = numbers[1]
-                xrp_input = numbers[2]
-            else:
-                custom_ratio = live_tokens.get(detected_token) or FALLBACK_RATIOS[detected_token]
-                xrp_input = numbers[1]
+        if len(numbers) >= 1:
+            custom_amount = numbers[0][0]
 
-            if xrp_input <= 0 and live_xrp:
-                xrp_input = live_xrp
+            # If a dollar sign was used, calculate direct USD price per token (e.g. 50000 rpr $0.40)
+            if has_dollar or any(is_usd for _, is_usd in numbers[1:]):
+                price_val = numbers[1][0] if len(numbers) > 1 else 0.0
+                total = custom_amount * price_val
 
-            total = custom_amount * custom_ratio * xrp_input
-            source = "Live" if live_tokens.get(detected_token) else "Fallback"
+                await update.message.reply_text(
+                    f"🎯 *Custom Bag Calculation (USD Price)*\n\n"
+                    f"• Holding: `{custom_amount:,.0f} {detected_token}`\n"
+                    f"• Price per coin: `${price_val:,.4f} USD`\n\n"
+                    f"💰 *Total Value: ${total:,.2f}*",
+                    parse_mode="Markdown"
+                )
+                return
 
-            await update.message.reply_text(
-                f"🎯 *Custom Bag Calculation*\n\n"
-                f"• Holding: `{custom_amount:,.0f} {detected_token}`\n"
-                f"• Ratio: `{custom_ratio:.6f} XRP` ({source})\n"
-                f"• Target XRP: `${xrp_input:,.4f}`\n\n"
-                f"💰 *Total Value: ${total:,.2f}*",
-                parse_mode="Markdown"
-            )
-            return
+            # Otherwise, handle XRP ratio calculation
+            if len(numbers) >= 2:
+                if len(numbers) >= 3:
+                    custom_ratio = numbers[1][0]
+                    xrp_input = numbers[2][0]
+                else:
+                    custom_ratio = live_tokens.get(detected_token) or FALLBACK_RATIOS[detected_token]
+                    xrp_input = numbers[1][0]
+
+                if xrp_input <= 0 and live_xrp:
+                    xrp_input = live_xrp
+
+                total = custom_amount * custom_ratio * xrp_input
+                source = "Live" if live_tokens.get(detected_token) else "Fallback"
+
+                await update.message.reply_text(
+                    f"🎯 *Custom Bag Calculation (XRP Ratio)*\n\n"
+                    f"• Holding: `{custom_amount:,.0f} {detected_token}`\n"
+                    f"• Ratio: `{custom_ratio:.6f} XRP` ({source})\n"
+                    f"• Target XRP: `${xrp_input:,.4f}`\n\n"
+                    f"💰 *Total Value: ${total:,.2f}*",
+                    parse_mode="Markdown"
+                )
+                return
 
     xrp_input = None
     if len(parts) == 1:
@@ -242,7 +262,7 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines.append(f"\n🚀 *Total Portfolio: ${total:,.2f}*")
     lines.append(
         "\n🟢 = Live price   ⚪ = Fallback ratio\n"
-        "Try: `50000 rpr 1.50` or `50000 rpr @ 0.0025 1.50`\n"
+        "Try: `50000 rpr $0.40` or `50000 rpr 1.50`\n"
         "Type /info for explanation"
     )
 
@@ -253,7 +273,6 @@ def main():
     if not token:
         raise RuntimeError("Please set the TELEGRAM_BOT_TOKEN environment variable")
 
-    # Explicitly set up the main thread event loop to avoid threading runtime errors
     try:
         loop = asyncio.get_event_loop()
         if loop.is_closed():
@@ -262,7 +281,6 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    # Start the background web server thread for Render health checks
     start_web_server_thread()
 
     app = Application.builder().token(token).build()
@@ -273,7 +291,7 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
-    print("Capital Revival Calculator is running cleanly...")
+    print("Capital Revival Calculator is running...")
     app.run_polling()
 
 if __name__ == "__main__":
