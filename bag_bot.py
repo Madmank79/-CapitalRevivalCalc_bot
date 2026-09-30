@@ -26,14 +26,6 @@ FALLBACK_RATIOS = {
 
 TOKEN_ORDER = ["RPR", "ASC", "PLR", "BOX", "STX", "GRIM"]
 
-TOKEN_ISSUERS = {
-    "RPR":  "r3qWgpz2ry3BhcRJ8JE6rxM8esrfhuKp4R",
-    "ASC":  "r3qWgpz2ry3BhcRJ8JE6rxM8esrfhuKp4R",
-    "PLR":  "rNSYhWLhuHvmURwWbJPBKZMSPsyG5Qek17",
-    "BOX":  "rhy4FUHtXrMZhbkBfeYvDv4nz6R7M4cu1t",
-    "GRIM": "rHLRdLwXiBZSD53ZQz8ogGJz25LzNCCjSz",
-}
-
 def get_live_xrp_usd() -> float | None:
     try:
         r = requests.get(
@@ -80,11 +72,11 @@ def get_live_token_prices_in_xrp() -> dict:
             if isinstance(tokens, list):
                 for item in tokens:
                     symbol = str(
-                        item.get("name") or item.get("currency") or 
+                        item.get("name") or item.get("currency") or
                         item.get("symbol") or item.get("code") or ""
                     ).upper()
                     price = (
-                        item.get("exch") or item.get("price") or 
+                        item.get("exch") or item.get("price") or
                         item.get("price_xrp") or item.get("rate")
                     )
                     if symbol in live and live[symbol] is None and price is not None:
