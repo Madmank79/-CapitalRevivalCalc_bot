@@ -253,7 +253,7 @@ def main():
     if not token:
         raise RuntimeError("Please set the TELEGRAM_BOT_TOKEN environment variable")
 
-    # Start the dummy web server so Render's free Web Service health check passes
+    # Start the dummy web server thread for Render health checks
     start_web_server_thread()
 
     app = Application.builder().token(token).build()
@@ -264,8 +264,15 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
-    print("Capital Revival Calculator is running with health-check web server...")
-    app.run_polling()
+    print("Capital Revival Calculator is running...")
+    
+    # Safely handle event loop initialization for polling
+    try:
+        app.run_polling()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        app.run_polling()
 
 if __name__ == "__main__":
     main()
