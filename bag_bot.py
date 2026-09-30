@@ -36,12 +36,12 @@ DEFAULT_HOLDINGS = {
 }
 
 FALLBACK_RATIOS = {
-    "RPR": 0.0025,
-    "ASC": 0.0006,
-    "PLR": 0.0009,
-    "BOX": 0.00015,
-    "STX": 0.000004,
-    "GRIM": 0.0042,
+    "RPR": 0.001884,  # Tuned to match your DEX pool rate
+    "ASC": 0.000426,
+    "PLR": 0.000715,
+    "BOX": 0.001078,
+    "STX": 0.000003,
+    "GRIM": 0.004164,
 }
 
 TOKEN_ORDER = ["RPR", "ASC", "PLR", "BOX", "STX", "GRIM"]
@@ -59,9 +59,9 @@ def get_live_xrp_usd() -> float | None:
 
 def get_live_token_prices_in_xrp() -> dict:
     live = {t: None for t in TOKEN_ORDER}
-    headers = {"User-Agent": "CapitalRevivalBot/1.3"}
+    headers = {"User-Agent": "CapitalRevivalBot/1.5"}
 
-    # Dexscreener
+    # Dexscreener search with strict XRP pairing check
     for token in TOKEN_ORDER:
         try:
             r = requests.get(
@@ -75,37 +75,14 @@ def get_live_token_prices_in_xrp() -> dict:
                     if p.get("chainId") != "xrpl":
                         continue
                     base = p.get("baseToken", {})
-                    if base.get("symbol", "").upper() == token:
+                    quote = p.get("quoteToken", {})
+                    if base.get("symbol", "").upper() == token and quote.get("symbol", "").upper() == "XRP":
                         price_native = p.get("priceNative")
                         if price_native is not None:
                             live[token] = float(price_native)
                             break
         except Exception:
             pass
-
-    # XRPL.to
-    try:
-        r = requests.get("https://api.xrpl.to/v1/tokens?limit=250", headers=headers, timeout=8)
-        if r.status_code == 200:
-            data = r.json()
-            tokens = data.get("tokens", data) if isinstance(data, dict) else data
-            if isinstance(tokens, list):
-                for item in tokens:
-                    symbol = str(
-                        item.get("name") or item.get("currency") or
-                        item.get("symbol") or item.get("code") or ""
-                    ).upper()
-                    price = (
-                        item.get("exch") or item.get("price") or
-                        item.get("price_xrp") or item.get("rate")
-                    )
-                    if symbol in live and live[symbol] is None and price is not None:
-                        try:
-                            live[symbol] = float(price)
-                        except (ValueError, TypeError):
-                            pass
-    except Exception:
-        pass
 
     return live
 
@@ -145,14 +122,14 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "This bot evaluates what RPR, ASC, PLR, BOX, STX and GRIM are worth at a given XRP price.\n\n"
         "*Two types of prices are used:*\n\n"
         "1. *Live prices* (🟢)\n"
-        "   Fetched in real-time from XRPL sources (Dexscreener + XRPL.to) when available.\n\n"
+        "   Fetched in real-time from XRPL sources when available.\n\n"
         "2. *Fallback ratios* (⚪)\n"
         "   Fixed ratios used only when live data cannot be fetched.\n\n"
         "*Important notes:*\n"
         "• This is a projection tool, not financial advice.\n"
         "• Live prices can change quickly on the XRPL DEX.\n"
         "• You can evaluate any custom bag size using the shorthand formats.\n\n"
-        "Data sources: CoinGecko (XRP), Dexscreener & XRPL.to (tokens)",
+        "Data sources: CoinGecko (XRP), Dexscreener (tokens)",
         parse_mode="Markdown"
     )
 
@@ -246,7 +223,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = [f"📈 *XRP Price: ${xrp_input:,.4f}* ({mode})\n"]
     lines.append("🪙 *Token Valuations:*")
 
-    total = 0.0
     for token in TOKEN_ORDER:
         ratio = live_tokens.get(token) or FALLBACK_RATIOS[token]
         is_live = live_tokens.get(token) is not None
@@ -285,7 +261,7 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
-    print("Capital Revival Calculator is running...")
+    print("Capital Revival Calculator is running cleanly...")
     app.run_polling()
 
 if __name__ == "__main__":
