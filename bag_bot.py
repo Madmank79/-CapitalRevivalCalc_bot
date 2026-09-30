@@ -242,7 +242,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("info", info_command))
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
-    app.add_handler(MessageHandler(filters.TEXT & \~filters.COMMAND, calc))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
     print("Capital Revival Calculator is running...")
     app.run_polling()
