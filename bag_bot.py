@@ -253,10 +253,18 @@ def main():
     if not token:
         raise RuntimeError("Please set the TELEGRAM_BOT_TOKEN environment variable")
 
-    # Start the dummy web server thread for Render health checks
+    # Explicitly set up the main thread event loop to avoid threading runtime errors
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # Start the background web server thread for Render health checks
     start_web_server_thread()
 
-    # Build and run the Telegram application
     app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -265,7 +273,7 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, calc))
 
-    print("Capital Revival Calculator is running...")
+    print("Capital Revival Calculator is running cleanly...")
     app.run_polling()
 
 if __name__ == "__main__":
