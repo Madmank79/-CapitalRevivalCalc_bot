@@ -133,8 +133,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Manual usage:*\n"
         "• Just type a number → `1.50`\n"
         "• Custom bag (USD price) → `50000 rpr $0.40`\n"
-        "• Custom bag (XRP ratio) → `50000 rpr 1.50`\n"
-        "• Custom ratio override → `50000 rpr @ 0.0025 1.50`\n\n"
+        "• Custom bag (XRP ratio) → `50000 rpr 1.50`\n\n"
         "🟢 = Live market price\n"
         "⚪ = Fallback ratio (used when live data is unavailable)",
         parse_mode="Markdown"
@@ -190,7 +189,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(numbers) >= 1:
             custom_amount = numbers[0][0]
 
-            # If a dollar sign was used, calculate direct USD price per token (e.g. 50000 rpr $0.40)
             if has_dollar or any(is_usd for _, is_usd in numbers[1:]):
                 price_val = numbers[1][0] if len(numbers) > 1 else 0.0
                 total = custom_amount * price_val
@@ -204,7 +202,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            # Otherwise, handle XRP ratio calculation
             if len(numbers) >= 2:
                 if len(numbers) >= 3:
                     custom_ratio = numbers[1][0]
@@ -254,10 +251,12 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for token in TOKEN_ORDER:
         ratio = live_tokens.get(token) or FALLBACK_RATIOS[token]
         is_live = live_tokens.get(token) is not None
-        value = ratio * xrp_input * DEFAULT_HOLDINGS[token]
+        unit_usd = ratio * xrp_input
+        value = unit_usd * DEFAULT_HOLDINGS[token]
         total += value
         tag = "🟢" if is_live else "⚪"
-        lines.append(f"{tag} *{token}*: `${value:,.2f}`  ({ratio:.6f} XRP)")
+        # Shows total bag value, unit price in USD, and XRP ratio
+        lines.append(f"{tag} *{token}*: `${value:,.2f}` (`${unit_usd:,.4f}`/coin, `{ratio:.6f}` XRP)")
 
     lines.append(f"\n🚀 *Total Portfolio: ${total:,.2f}*")
     lines.append(
