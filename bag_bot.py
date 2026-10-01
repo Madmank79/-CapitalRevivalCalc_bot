@@ -17,25 +17,40 @@ def health():
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
-    flask_app.run(host="0.0.0.0", port=port)
+    flask_app.run(host="0.0.0.0", port=port, use_reloader=False)
 
-# ==================== SETTINGS ====================
-DEFAULT_HOLDINGS = {
-    "RPR": 100000,
-    "ASC": 100000,
-    "PLR": 100000,
-    "BOX": 100000,
-    "STX": 100000,
-    "GRIM": 100000,
-}
-
-FALLBACK_RATIOS = {
-    "RPR": 0.0025,
-    "ASC": 0.0006,
-    "PLR": 0.0009,
-    "BOX": 0.00015,
-    "STX": 0.000004,
-    "GRIM": 0.0042,
+# ==================== TOKEN CONFIGURATION ====================
+TOKEN_CONFIG = {
+    "RPR": {
+        "issuer": "r3qWgpz2ry3BhcRJ8JE6rxM8esrfhuKp4R",
+        "fallback": 0.001991,  # Updated to last known price ratio
+        "holding": 100000
+    },
+    "ASC": {
+        "issuer": "r3qWgpz2ry3BhcRJ8JE6rxM8esrfhuKp4R",
+        "fallback": 0.000426,  # Updated to last known price ratio
+        "holding": 100000
+    },
+    "PLR": {
+        "issuer": "rNSYhWLhuHvmURwWbJPBKZMSPsyG5Qek17",
+        "fallback": 0.000715,  # Updated to last known price ratio
+        "holding": 100000
+    },
+    "BOX": {
+        "issuer": "rhy4FUHtXrMZhbkBfeYvDv4nz6R7M4cu1t",
+        "fallback": 0.001078,  # Updated to last known price ratio
+        "holding": 100000
+    },
+    "STX": {
+        "issuer": "rSTAYKxF2K77ZLZ8GoAwTqPGaphAqMyXV",
+        "fallback": 0.000003,  # Updated to last known price ratio
+        "holding": 100000
+    },
+    "GRIM": {
+        "issuer": "rHLRdLwXiBZSD53ZQz8ogGJz25LzNCCjSz",
+        "fallback": 0.004164,  # Updated to last known price ratio
+        "holding": 100000
+    },
 }
 
 TOKEN_ORDER = ["RPR", "ASC", "PLR", "BOX", "STX", "GRIM"]
@@ -54,13 +69,14 @@ def get_live_xrp_usd():
 
 def get_live_token_prices_in_xrp():
     live = {t: None for t in TOKEN_ORDER}
-    headers = {"User-Agent": "CapitalRevivalBot/2.0"}
+    headers = {"User-Agent": "CapitalRevivalBot/2.3"}
 
-    # Source 1: Dexscreener
+    # Query Dexscreener using exact issuer addresses
     for token in TOKEN_ORDER:
+        issuer = TOKEN_CONFIG[token]["issuer"]
         try:
             r = requests.get(
-                f"https://api.dexscreener.com/latest/dex/search?q={token}",
+                f"https://api.dexscreener.com/latest/dex/search?q={issuer}",
                 headers=headers,
                 timeout=6
             )
@@ -70,37 +86,16 @@ def get_live_token_prices_in_xrp():
                     if p.get("chainId") != "xrpl":
                         continue
                     base = p.get("baseToken", {})
-                    if base.get("symbol", "").upper() == token:
+                    quote = p.get("quoteToken", {})
+                    
+                    base_addr = base.get("address", "")
+                    if issuer.lower() in base_addr.lower() and quote.get("symbol", "").upper() == "XRP":
                         price_native = p.get("priceNative")
                         if price_native is not None:
                             live[token] = float(price_native)
                             break
         except Exception:
             pass
-
-    # Source 2: XRPL.to
-    try:
-        r = requests.get("https://api.xrpl.to/v1/tokens?limit=250", headers=headers, timeout=8)
-        if r.status_code == 200:
-            data = r.json()
-            tokens = data.get("tokens", data) if isinstance(data, dict) else data
-            if isinstance(tokens, list):
-                for item in tokens:
-                    symbol = str(
-                        item.get("name") or item.get("currency") or
-                        item.get("symbol") or item.get("code") or ""
-                    ).upper()
-                    price = (
-                        item.get("exch") or item.get("price") or
-                        item.get("price_xrp") or item.get("rate")
-                    )
-                    if symbol in live and live[symbol] is None and price is not None:
-                        try:
-                            live[symbol] = float(price)
-                        except (ValueError, TypeError):
-                            pass
-    except Exception:
-        pass
 
     return live
 
@@ -114,8 +109,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  Example: `1.50`\n\n"
         "• Custom bag\n"
         "  Example: `50000 rpr 1.50`\n\n"
-        "• Advanced (custom ratio)\n"
-        "  Example: `50000 rpr @ 0.0025 1.50`\n\n"
         "Type /help for more commands\n"
         "Type /info to understand live vs estimated prices"
     )
@@ -129,12 +122,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/info – How the calculator works\n"
         "/calc – Use current live XRP price\n\n"
         "*How to calculate:*\n\n"
-        "• Just an XRP price\n"
-        "  `1.50`\n\n"
-        "• Custom bag + XRP price\n"
-        "  `50000 rpr 1.50`\n\n"
-        "• Custom ratio\n"
-        "  `50000 rpr @ 0.0025 1.50`\n\n"
+        "• Just an XRP price: `1.50`\n"
+        "• Custom bag + XRP price: `50000 rpr 1.50`\n\n"
         "🟢 = Live market price\n"
         "⚪ = Estimated ratio"
     )
@@ -143,17 +132,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "ℹ️ *How this calculator works*\n\n"
-        "This bot estimates token values based on an XRP price.\n\n"
+        "This bot estimates token values based on an XRP price using official XRPL issuer addresses.\n\n"
         "*Two types of data:*\n\n"
         "🟢 *Live prices*\n"
-        "Pulled in real time from Dexscreener and XRPL.to when available.\n\n"
+        "Pulled in real time from Dexscreener via verified issuer contracts.\n\n"
         "⚪ *Estimated ratios*\n"
-        "Used only when live data cannot be fetched. These are approximate values.\n\n"
-        "*Important notes:*\n"
-        "• This is a projection tool, not financial advice\n"
-        "• Live prices on the XRPL DEX can change quickly\n"
-        "• The 100,000 size is only an example portfolio\n\n"
-        "Data sources: CoinGecko (XRP), Dexscreener & XRPL.to"
+        "Used only when live data cannot be fetched.\n\n"
+        "Data sources: CoinGecko (XRP), Dexscreener (XRPL)"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -162,7 +147,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = update.message.text.strip().lower()
     parts = raw.replace("@", " @ ").split()
 
-    # Remove command if present
     if parts and parts[0] in ["/calc", "/bag", "/live", "/price", "/start", "/help", "/info"]:
         parts = parts[1:]
 
@@ -172,7 +156,7 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---------- Custom bag detection ----------
     detected_token = None
     for p in parts:
-        if p.upper() in FALLBACK_RATIOS:
+        if p.upper() in TOKEN_CONFIG:
             detected_token = p.upper()
             break
 
@@ -188,13 +172,8 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if len(numbers) >= 2:
             amount = numbers[0]
-
-            if len(numbers) >= 3:  # custom ratio
-                ratio = numbers[1]
-                xrp_price = numbers[2]
-            else:  # use live or fallback ratio
-                ratio = live_tokens.get(detected_token) or FALLBACK_RATIOS[detected_token]
-                xrp_price = numbers[1]
+            ratio = live_tokens.get(detected_token) or TOKEN_CONFIG[detected_token]["fallback"]
+            xrp_price = numbers[1]
 
             if xrp_price <= 0 and live_xrp:
                 xrp_price = live_xrp
@@ -236,9 +215,9 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     total = 0.0
     for token in TOKEN_ORDER:
-        ratio = live_tokens.get(token) or FALLBACK_RATIOS[token]
+        ratio = live_tokens.get(token) or TOKEN_CONFIG[token]["fallback"]
         is_live = live_tokens.get(token) is not None
-        value = ratio * xrp_price * DEFAULT_HOLDINGS[token]
+        value = ratio * xrp_price * TOKEN_CONFIG[token]["holding"]
         total += value
         tag = "🟢" if is_live else "⚪"
         lines.append(f"{tag} *{token}*: `${value:,.2f}`   ({ratio:.6f} XRP)")
@@ -258,11 +237,11 @@ def main():
     if not token:
         raise RuntimeError("Please set the TELEGRAM_BOT_TOKEN environment variable")
 
-    # Start health server
+    # Start Flask health check server in background thread for Railway
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Start bot
+    # Start Telegram Bot
     app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -270,11 +249,10 @@ def main():
     app.add_handler(CommandHandler("info", info_command))
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
 
-    # Safer way to add the text handler (avoids backslash issues)
     text_filter = filters.TEXT & ~filters.COMMAND
     app.add_handler(MessageHandler(text_filter, calc))
 
-    print("Capital Revival Calculator is running...")
+    print("Capital Revival Calculator is running on Railway...")
     app.run_polling()
 
 if __name__ == "__main__":
