@@ -271,7 +271,7 @@ def main():
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
 
     # Safer way to add the text handler (avoids backslash issues)
-    text_filter = filters.TEXT & \~filters.COMMAND
+    text_filter = filters.TEXT & ~filters.COMMAND
     app.add_handler(MessageHandler(text_filter, calc))
 
     print("Capital Revival Calculator is running...")
