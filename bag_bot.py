@@ -55,7 +55,6 @@ def get_live_token_prices_in_xrp():
     live = {t: None for t in TOKEN_ORDER}
     headers = {"User-Agent": "CapitalRevivalBot/1.6"}
 
-    # Dexscreener
     for token in TOKEN_ORDER:
         try:
             r = requests.get(
@@ -77,7 +76,6 @@ def get_live_token_prices_in_xrp():
         except Exception:
             pass
 
-    # XRPL.to
     try:
         r = requests.get("https://api.xrpl.to/v1/tokens?limit=250", headers=headers, timeout=8)
         if r.status_code == 200:
@@ -192,7 +190,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(numbers) >= 1:
             custom_amount = numbers[0]
 
-            # Direct USD price per coin → 50000 rpr $0.003
             if has_dollar and len(numbers) == 2:
                 usd_price = numbers[1]
                 total = custom_amount * usd_price
@@ -205,11 +202,9 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            # Custom ratio + XRP price → 50000 rpr @ 0.002 1.50
             if len(numbers) >= 3:
                 custom_ratio = numbers[1]
                 xrp_input = numbers[2]
-            # Amount + XRP price → 50000 rpr 1.50
             elif len(numbers) == 2:
                 custom_ratio = live_tokens.get(detected_token) or FALLBACK_RATIOS[detected_token]
                 xrp_input = numbers[1]
@@ -238,7 +233,6 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-    # Normal portfolio view
     xrp_input = None
     if len(parts) == 1:
         try:
@@ -283,18 +277,19 @@ def main():
     if not token:
         raise RuntimeError("Please set the TELEGRAM_BOT_TOKEN environment variable")
 
-    # Start the health server in a background thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Start the Telegram bot
     app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("info", info_command))
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
-    app.add_handler(MessageHandler(filters.TEXT & \~filters.COMMAND, calc))
+
+    # IMPORTANT: no backslash before the \~
+    text_filter = filters.TEXT & \~filters.COMMAND
+    app.add_handler(MessageHandler(text_filter, calc))
 
     print("Capital Revival Calculator is running...")
     app.run_polling()
