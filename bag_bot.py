@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-# ---------- Flask health server (keeps Render awake) ----------
+# ==================== HEALTH SERVER ====================
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
@@ -19,7 +19,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     flask_app.run(host="0.0.0.0", port=port)
 
-# ---------- Bot settings ----------
+# ==================== SETTINGS ====================
 DEFAULT_HOLDINGS = {
     "RPR": 100000,
     "ASC": 100000,
@@ -40,6 +40,7 @@ FALLBACK_RATIOS = {
 
 TOKEN_ORDER = ["RPR", "ASC", "PLR", "BOX", "STX", "GRIM"]
 
+# ==================== LIVE DATA ====================
 def get_live_xrp_usd():
     try:
         r = requests.get(
@@ -53,8 +54,9 @@ def get_live_xrp_usd():
 
 def get_live_token_prices_in_xrp():
     live = {t: None for t in TOKEN_ORDER}
-    headers = {"User-Agent": "CapitalRevivalBot/1.6"}
+    headers = {"User-Agent": "CapitalRevivalBot/2.0"}
 
+    # Source 1: Dexscreener
     for token in TOKEN_ORDER:
         try:
             r = requests.get(
@@ -76,6 +78,7 @@ def get_live_token_prices_in_xrp():
         except Exception:
             pass
 
+    # Source 2: XRPL.to
     try:
         r = requests.get("https://api.xrpl.to/v1/tokens?limit=250", headers=headers, timeout=8)
         if r.status_code == 200:
@@ -101,71 +104,72 @@ def get_live_token_prices_in_xrp():
 
     return live
 
+# ==================== COMMANDS ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    text = (
         "📊 *Capital Revival Calculator*\n\n"
-        "Estimates values for RPR, ASC, PLR, BOX, STX & GRIM.\n\n"
-        "*Simple ways to use:*\n\n"
-        "1. Just type an XRP price\n"
-        "   Example: `1.50`\n\n"
-        "2. Custom bag with XRP price\n"
-        "   Example: `50000 rpr 1.50`\n\n"
-        "3. Custom bag with USD price per coin\n"
-        "   Example: `50000 rpr $0.003`\n\n"
-        "Type /help for all commands\n"
-        "Type /info for explanation",
-        parse_mode="Markdown"
+        "Estimates what RPR, ASC, PLR, BOX, STX & GRIM could be worth at different XRP prices.\n\n"
+        "*How to use:*\n\n"
+        "• Type an XRP price\n"
+        "  Example: `1.50`\n\n"
+        "• Custom bag\n"
+        "  Example: `50000 rpr 1.50`\n\n"
+        "• Advanced (custom ratio)\n"
+        "  Example: `50000 rpr @ 0.0025 1.50`\n\n"
+        "Type /help for more commands\n"
+        "Type /info to understand live vs estimated prices"
     )
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    text = (
         "🛠 *Commands*\n\n"
         "/start – Welcome message\n"
         "/help – This help message\n"
         "/info – How the calculator works\n"
         "/calc – Use current live XRP price\n\n"
-        "*How to type calculations:*\n\n"
+        "*How to calculate:*\n\n"
         "• Just an XRP price\n"
         "  `1.50`\n\n"
         "• Custom bag + XRP price\n"
         "  `50000 rpr 1.50`\n\n"
-        "• Custom bag + USD price per coin\n"
-        "  `50000 rpr $0.003`\n\n"
-        "• Advanced (custom ratio)\n"
-        "  `50000 rpr @ 0.002 1.50`\n\n"
-        "🟢 = Live price\n"
-        "⚪ = Fallback ratio",
-        parse_mode="Markdown"
+        "• Custom ratio\n"
+        "  `50000 rpr @ 0.0025 1.50`\n\n"
+        "🟢 = Live market price\n"
+        "⚪ = Estimated ratio"
     )
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    text = (
         "ℹ️ *How this calculator works*\n\n"
-        "This bot estimates what RPR, ASC, PLR, BOX, STX and GRIM are worth.\n\n"
-        "*Two price types:*\n\n"
+        "This bot estimates token values based on an XRP price.\n\n"
+        "*Two types of data:*\n\n"
         "🟢 *Live prices*\n"
-        "Fetched in real-time from Dexscreener & XRPL.to when available.\n\n"
-        "⚪ *Fallback ratios*\n"
-        "Used only when live data cannot be fetched.\n\n"
-        "*Notes:*\n"
-        "• This is a projection tool, not financial advice.\n"
-        "• Live prices change quickly on the XRPL DEX.\n"
-        "• The 100,000 size is just an example portfolio.\n\n"
-        "Data sources: CoinGecko (XRP), Dexscreener & XRPL.to",
-        parse_mode="Markdown"
+        "Pulled in real time from Dexscreener and XRPL.to when available.\n\n"
+        "⚪ *Estimated ratios*\n"
+        "Used only when live data cannot be fetched. These are approximate values.\n\n"
+        "*Important notes:*\n"
+        "• This is a projection tool, not financial advice\n"
+        "• Live prices on the XRPL DEX can change quickly\n"
+        "• The 100,000 size is only an example portfolio\n\n"
+        "Data sources: CoinGecko (XRP), Dexscreener & XRPL.to"
     )
+    await update.message.reply_text(text, parse_mode="Markdown")
 
+# ==================== MAIN CALCULATOR ====================
 async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    raw_text = update.message.text.strip()
-    lower_text = raw_text.lower()
-    parts = lower_text.replace("@", " @ ").split()
+    raw = update.message.text.strip().lower()
+    parts = raw.replace("@", " @ ").split()
 
+    # Remove command if present
     if parts and parts[0] in ["/calc", "/bag", "/live", "/price", "/start", "/help", "/info"]:
         parts = parts[1:]
 
     live_xrp = get_live_xrp_usd()
     live_tokens = get_live_token_prices_in_xrp()
 
+    # ---------- Custom bag detection ----------
     detected_token = None
     for p in parts:
         if p.upper() in FALLBACK_RATIOS:
@@ -174,112 +178,91 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if detected_token:
         numbers = []
-        has_dollar = False
         for p in parts:
             if p.upper() == detected_token:
                 continue
-            clean = p.replace(",", "")
-            if clean.startswith("$"):
-                has_dollar = True
-                clean = clean[1:]
             try:
-                numbers.append(float(clean))
+                numbers.append(float(p.replace("$", "").replace(",", "")))
             except ValueError:
                 pass
 
-        if len(numbers) >= 1:
-            custom_amount = numbers[0]
+        if len(numbers) >= 2:
+            amount = numbers[0]
 
-            if has_dollar and len(numbers) == 2:
-                usd_price = numbers[1]
-                total = custom_amount * usd_price
-                await update.message.reply_text(
-                    f"🎯 *Custom Calculation*\n\n"
-                    f"• Amount: `{custom_amount:,.0f} {detected_token}`\n"
-                    f"• Price per coin: `${usd_price:.4f} USD`\n\n"
-                    f"💰 *Total Value: ${total:,.2f}*",
-                    parse_mode="Markdown"
-                )
-                return
+            if len(numbers) >= 3:  # custom ratio
+                ratio = numbers[1]
+                xrp_price = numbers[2]
+            else:  # use live or fallback ratio
+                ratio = live_tokens.get(detected_token) or FALLBACK_RATIOS[detected_token]
+                xrp_price = numbers[1]
 
-            if len(numbers) >= 3:
-                custom_ratio = numbers[1]
-                xrp_input = numbers[2]
-            elif len(numbers) == 2:
-                custom_ratio = live_tokens.get(detected_token) or FALLBACK_RATIOS[detected_token]
-                xrp_input = numbers[1]
-            else:
-                await update.message.reply_text(
-                    "Please use one of these formats:\n"
-                    "`50000 rpr 1.50`\n"
-                    "`50000 rpr $0.003`\n"
-                    "`50000 rpr @ 0.002 1.50`"
-                )
-                return
+            if xrp_price <= 0 and live_xrp:
+                xrp_price = live_xrp
 
-            if xrp_input <= 0 and live_xrp:
-                xrp_input = live_xrp
+            total = amount * ratio * xrp_price
+            source = "Live" if live_tokens.get(detected_token) is not None else "Estimated"
 
-            total = custom_amount * custom_ratio * xrp_input
-            source = "Live" if live_tokens.get(detected_token) else "Fallback"
-
-            await update.message.reply_text(
-                f"🎯 *Custom Bag Calculation*\n\n"
-                f"• Amount: `{custom_amount:,.0f} {detected_token}`\n"
-                f"• Ratio: `{custom_ratio:.6f} XRP` ({source})\n"
-                f"• XRP Price: `${xrp_input:,.4f}`\n\n"
-                f"💰 *Total Value: ${total:,.2f}*",
-                parse_mode="Markdown"
+            reply = (
+                f"🎯 *Custom Bag*\n\n"
+                f"• Holding: `{amount:,.0f} {detected_token}`\n"
+                f"• Ratio: `{ratio:.6f} XRP` ({source})\n"
+                f"• XRP Price: `${xrp_price:,.4f}`\n\n"
+                f"💰 *Total Value: ${total:,.2f}*"
             )
+            await update.message.reply_text(reply, parse_mode="Markdown")
             return
 
-    xrp_input = None
+    # ---------- Normal portfolio view ----------
+    xrp_price = None
     if len(parts) == 1:
         try:
-            xrp_input = float(parts[0].replace("$", "").replace(",", ""))
+            xrp_price = float(parts[0].replace("$", "").replace(",", ""))
         except ValueError:
             pass
 
-    if xrp_input is None or xrp_input <= 0:
+    if xrp_price is None or xrp_price <= 0:
         if live_xrp is None:
             await update.message.reply_text(
-                "Could not fetch live XRP price.\nPlease type a number (example: `1.50`)."
+                "Could not fetch live XRP price right now.\nPlease type a number (example: `1.50`)."
             )
             return
-        xrp_input = live_xrp
+        xrp_price = live_xrp
         mode = "Current Live XRP"
     else:
         mode = "Your Target XRP Price"
 
-    lines = [f"📈 *XRP Price: ${xrp_input:,.4f}* ({mode})\n"]
-    lines.append("💼 *Portfolio (100,000 of each token):*\n")
+    lines = [f"📈 *XRP Price: ${xrp_price:,.4f}* ({mode})\n"]
+    lines.append("💼 *Example Portfolio (100,000 of each):*\n")
 
     total = 0.0
     for token in TOKEN_ORDER:
         ratio = live_tokens.get(token) or FALLBACK_RATIOS[token]
         is_live = live_tokens.get(token) is not None
-        value = ratio * xrp_input * DEFAULT_HOLDINGS[token]
+        value = ratio * xrp_price * DEFAULT_HOLDINGS[token]
         total += value
         tag = "🟢" if is_live else "⚪"
-        lines.append(f"{tag} *{token}*: `${value:,.2f}`  ({ratio:.6f} XRP)")
+        lines.append(f"{tag} *{token}*: `${value:,.2f}`   ({ratio:.6f} XRP)")
 
-    lines.append(f"\n🚀 *Total Portfolio: ${total:,.2f}*")
+    lines.append(f"\n🚀 *Total: ${total:,.2f}*")
     lines.append(
-        "\n🟢 = Live price   ⚪ = Fallback ratio\n"
-        "Examples:\n"
-        "`1.50`  |  `50000 rpr 1.50`  |  `50000 rpr $0.003`"
+        "\n🟢 = Live market price\n"
+        "⚪ = Estimated ratio\n\n"
+        "Try a custom bag: `50000 rpr 1.50`"
     )
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
+# ==================== MAIN ====================
 def main():
     token = TELEGRAM_BOT_TOKEN
     if not token:
         raise RuntimeError("Please set the TELEGRAM_BOT_TOKEN environment variable")
 
+    # Start health server
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
+    # Start bot
     app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -287,7 +270,7 @@ def main():
     app.add_handler(CommandHandler("info", info_command))
     app.add_handler(CommandHandler(["calc", "bag", "live", "price"], calc))
 
-    # IMPORTANT: no backslash before the \~
+    # Safer way to add the text handler (avoids backslash issues)
     text_filter = filters.TEXT & \~filters.COMMAND
     app.add_handler(MessageHandler(text_filter, calc))
 
