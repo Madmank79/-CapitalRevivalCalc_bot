@@ -69,7 +69,7 @@ def get_live_xrp_usd():
 
 def get_live_token_prices_in_xrp():
     live = {t: None for t in TOKEN_ORDER}
-    headers = {"User-Agent": "CapitalRevivalBot/2.3"}
+    headers = {"User-Agent": "CapitalRevivalBot/2.4"}
 
     # Query Dexscreener using exact issuer addresses
     for token in TOKEN_ORDER:
@@ -109,6 +109,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  Example: `1.50`\n\n"
         "• Custom bag\n"
         "  Example: `50000 rpr 1.50`\n\n"
+        "• Custom ratio + XRP price\n"
+        "  Example: `100000 rpr @ 0.40 589`\n\n"
         "Type /help for more commands\n"
         "Type /info to understand live vs estimated prices"
     )
@@ -123,7 +125,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/calc – Use current live XRP price\n\n"
         "*How to calculate:*\n\n"
         "• Just an XRP price: `1.50`\n"
-        "• Custom bag + XRP price: `50000 rpr 1.50`\n\n"
+        "• Custom bag + XRP price: `50000 rpr 1.50`\n"
+        "• Custom ratio + XRP price: `100000 rpr @ 0.40 589`\n\n"
         "🟢 = Live market price\n"
         "⚪ = Estimated ratio"
     )
@@ -163,7 +166,7 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if detected_token:
         numbers = []
         for p in parts:
-            if p.upper() == detected_token:
+            if p.upper() == detected_token or p == "@":
                 continue
             try:
                 numbers.append(float(p.replace("$", "").replace(",", "")))
@@ -172,14 +175,22 @@ async def calc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if len(numbers) >= 2:
             amount = numbers[0]
-            ratio = live_tokens.get(detected_token) or TOKEN_CONFIG[detected_token]["fallback"]
-            xrp_price = numbers[1]
+            
+            # If 3 numbers are provided: [amount, custom_ratio, xrp_price]
+            if len(numbers) >= 3:
+                ratio = numbers[1]
+                xrp_price = numbers[2]
+                source = "Custom Ratio"
+            else:
+                # If 2 numbers are provided: [amount, xrp_price] (uses live/fallback ratio)
+                ratio = live_tokens.get(detected_token) or TOKEN_CONFIG[detected_token]["fallback"]
+                xrp_price = numbers[1]
+                source = "Live" if live_tokens.get(detected_token) is not None else "Estimated"
 
             if xrp_price <= 0 and live_xrp:
                 xrp_price = live_xrp
 
             total = amount * ratio * xrp_price
-            source = "Live" if live_tokens.get(detected_token) is not None else "Estimated"
 
             reply = (
                 f"🎯 *Custom Bag*\n\n"
