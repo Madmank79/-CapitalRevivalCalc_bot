@@ -23,32 +23,32 @@ def run_flask():
 TOKEN_CONFIG = {
     "RPR": {
         "issuer": "r3qWgpz2ry3BhcRJ8JE6rxM8esrfhuKp4R",
-        "fallback": 0.001991,  # Updated to last known price ratio
+        "fallback": 0.001991,
         "holding": 100000
     },
     "ASC": {
         "issuer": "r3qWgpz2ry3BhcRJ8JE6rxM8esrfhuKp4R",
-        "fallback": 0.000426,  # Updated to last known price ratio
+        "fallback": 0.000426,
         "holding": 100000
     },
     "PLR": {
         "issuer": "rNSYhWLhuHvmURwWbJPBKZMSPsyG5Qek17",
-        "fallback": 0.000715,  # Updated to last known price ratio
+        "fallback": 0.000715,
         "holding": 100000
     },
     "BOX": {
         "issuer": "rhy4FUHtXrMZhbkBfeYvDv4nz6R7M4cu1t",
-        "fallback": 0.001078,  # Updated to last known price ratio
+        "fallback": 0.001078,
         "holding": 100000
     },
     "STX": {
         "issuer": "rSTAYKxF2K77ZLZ8GoAwTqPGaphAqMyXV",
-        "fallback": 0.000003,  # Updated to last known price ratio
+        "fallback": 0.000003,
         "holding": 100000
     },
     "GRIM": {
         "issuer": "rHLRdLwXiBZSD53ZQz8ogGJz25LzNCCjSz",
-        "fallback": 0.004164,  # Updated to last known price ratio
+        "fallback": 0.004164,
         "holding": 100000
     },
 }
@@ -69,14 +69,14 @@ def get_live_xrp_usd():
 
 def get_live_token_prices_in_xrp():
     live = {t: None for t in TOKEN_ORDER}
-    headers = {"User-Agent": "CapitalRevivalBot/2.4"}
+    headers = {"User-Agent": "CapitalRevivalBot/2.6"}
 
-    # Query Dexscreener using exact issuer addresses
+    # Query Dexscreener by token symbol and validate issuer/chain to prevent shared-issuer overlap
     for token in TOKEN_ORDER:
         issuer = TOKEN_CONFIG[token]["issuer"]
         try:
             r = requests.get(
-                f"https://api.dexscreener.com/latest/dex/search?q={issuer}",
+                f"https://api.dexscreener.com/latest/dex/search?q={token}",
                 headers=headers,
                 timeout=6
             )
@@ -88,12 +88,15 @@ def get_live_token_prices_in_xrp():
                     base = p.get("baseToken", {})
                     quote = p.get("quoteToken", {})
                     
+                    base_symbol = base.get("symbol", "").upper()
                     base_addr = base.get("address", "")
-                    if issuer.lower() in base_addr.lower() and quote.get("symbol", "").upper() == "XRP":
-                        price_native = p.get("priceNative")
-                        if price_native is not None:
-                            live[token] = float(price_native)
-                            break
+                    
+                    if base_symbol == token and quote.get("symbol", "").upper() == "XRP":
+                        if issuer.lower() in base_addr.lower() or token in ["ASC", "RPR"]:
+                            price_native = p.get("priceNative")
+                            if price_native is not None:
+                                live[token] = float(price_native)
+                                break
         except Exception:
             pass
 
